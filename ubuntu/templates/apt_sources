@@ -1,0 +1,5 @@
+deb http://archive.ubuntu.com/ubuntu {{ ansible_distribution_release }} main universe multiverse restricted
+deb http://archive.ubuntu.com/ubuntu {{ ansible_distribution_release }}-updates main universe multiverse restricted
+deb http://archive.ubuntu.com/ubuntu {{ ansible_distribution_release }}-backports main restricted universe multiverse
+deb http://archive.canonical.com/ubuntu {{ ansible_distribution_release }} partner
+deb http://security.ubuntu.com/ubuntu {{ ansible_distribution_release }}-security main universe multiverse restricted

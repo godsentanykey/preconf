@@ -1,0 +1,156 @@
+---
+# tasks file for centos
+
+  - name: use sudo without password
+    lineinfile:
+      path: /etc/sudoers
+      state: present
+      regexp: '^%wheel'
+      line: '%wheel ALL=(ALL) NOPASSWD: ALL'
+      validate: 'visudo -cf %s'
+
+  - name: Append /etc/hosts with content
+    lineinfile:
+      path: "/etc/resolv.conf"
+      line: 'nameserver {{ DNSserver }}'
+      insertbefore: BOF
+
+  - name: Update all packages to the latest version
+    yum:
+      name: "*"
+      update_cache: yes
+
+  - name: Remove default unneeded packages
+    yum:
+      name: "{{ item }}"
+      state: absent
+    loop: "{{ packagesToDelete }}"
+
+  - name: Install needed packages
+    yum:
+      name: "{{ item }}"
+      state: latest
+      update_cache: yes
+    loop: "{{ packagesToInstall }}"
+
+  - name: Delete unneeded files if those exist
+    file:
+      name: "{{ item }}"
+      state: absent
+    loop: "{{ filesToDelete }}"
+
+  - name: Mask and stop unnecessary systemd services
+    systemd:
+      name: "{{ item }}"
+      state: stopped
+      enabled: no
+      masked: yes
+    loop: "{{ systemdServicesToStop }}"
+    ignore_errors: yes
+
+  - name: Enable and start necessary systemd services
+    systemd:
+      name: "{{ item }}"
+      state: restarted
+      enabled: yes
+    loop: "{{ systemdServicesToStart }}"
+
+  - name: Create new resolv.conf with content
+    copy:
+      dest: "/etc/resolv.conf"
+      content: |
+        nameserver {{ DNSserver }}
+        nameserver 127.0.0.1
+
+  - name: Ensure resolv.conf is immutable.
+    file:
+      path: /etc/resolv.conf
+      attr: i
+
+  - name: Create a symlink for localtime
+    file:
+      src: /usr/share/zoneinfo/Europe/Kiev
+      dest: /etc/localtime
+      state: link
+
+  - name: get interface names back to normal and beloved by people
+    replace:
+      path=/etc/default/grub
+      regexp='GRUB_CMDLINE_LINUX=".*"'
+      replace='GRUB_CMDLINE_LINUX="ipv6.disable=1 net.ifnames=0 biosdevname=0"'
+    notify: restart host
+
+  - name: disable ipv6
+    replace:
+      path=/etc/default/grub
+      regexp='GRUB_CMDLINE_LINUX_DEFAULT=".*"'
+      replace='GRUB_CMDLINE_LINUX_DEFAULT="quiet splash ipv6.disable=1"'
+    notify: restart host
+
+  - name: update grub and ensure restart of system
+    shell: grub2-mkconfig -o /boot/grub2/grub.cfg
+
+  - name: Collect Network facts
+    setup:
+      gather_subset:
+        - '!all'
+        - '!any'
+        - network
+        - facter
+
+  - name: Append /etc/hosts with content
+    lineinfile:
+      path: "/etc/hosts"
+      line: '127.0.0.1 {{ansible_nodename}} {{ansible_nodename}}.is.local'
+      insertbefore: BOF
+
+  - name: move /etc/sysconfig/network-scripts/ifcfg-{{ ansible_default_ipv4.interface }} to /etc/sysconfig/network-scripts/ifcfg-eth0
+    command: mv /etc/sysconfig/network-scripts/ifcfg-{{ ansible_default_ipv4.interface }} /etc/sysconfig/network-scripts/ifcfg-eth0
+
+  - name: replace {{ ansible_default_ipv4.interface }} to eth0 in file /etc/sysconfig/network-scripts/ifcfg-eth0
+    replace:
+      path=/etc/sysconfig/network-scripts/ifcfg-eth0
+      regexp='{{ ansible_default_ipv4.interface }}'
+      replace='eth0'
+
+  - name: Create a {{ directoryForConfigs }} directory if it does not exist
+    file:
+      path: "{{ directoryForConfigs }}"
+      state: directory
+      mode: '0755'
+
+  - name: Transfer configs
+    copy:
+      src: configs/{{ item }}
+      dest: "{{ directoryForConfigs }}/{{ item }}"
+      mode: '0755'
+    loop: "{{ configFilesToTransfer }}"
+
+  - name: Create a symlink for configs files in /etc/skel
+    file:
+      src: "{{ directoryForConfigs }}/{{ item }}"
+      dest: "/etc/skel/{{ item }}"
+      state: link
+      force: yes
+    loop: "{{ configFilesToTransfer }}"
+
+  - name: Get the location of zsh
+    shell: echo $(which {{ defaultShell4CreatedUsers }})
+    register: shellLocation
+
+  - name: create users
+    user:
+      name: "{{ item }}"
+      shell: "{{ shellLocation.stdout }}"
+      groups: wheel
+      append: yes
+      state: present
+      create_home: yes
+    loop: "{{ usersToCreate }}"
+
+  - name: Set authorized keys for created users
+    authorized_key:
+      user: "{{ item }}"
+      state: present
+      key: "{{ lookup('file', 'authorized_keys/{{ item }}') }}"
+    loop: "{{ usersToCreate }}"

@@ -1,0 +1,195 @@
+---
+# tasks file for ubuntu
+
+  - name: use sudo without password
+    lineinfile:
+      path: /etc/sudoers
+      state: present
+      regexp: '^%sudo'
+      line: '%sudo ALL=(ALL) NOPASSWD: ALL'
+      validate: 'visudo -cf %s'
+
+  - name: keep environment
+    lineinfile:
+      path: /etc/sudoers
+      state: present
+      insertbefore: 'Default.*'
+      line: 'Defaults    env_keep += "HOME SHELL"'
+      validate: 'visudo -cf %s'
+
+  - name: Append /etc/resolv.conf with content
+    lineinfile:
+      path: "/etc/resolv.conf"
+      line: 'nameserver {{ DNSserver }}'
+      insertbefore: BOF
+
+  - name: deploy templated files
+    template:
+      src: "{{ item.src }}"
+      dest: "{{ item.dest }}"
+    loop:
+      - { src: 'apt_sources', dest: '/etc/apt/sources.list'}
+      - { src: '10periodic', dest: '/etc/apt/apt.conf.d/10periodic'}
+      - { src: '20auto-upgrades', dest: '/etc/apt/apt.conf.d/20auto-upgrades'}
+      - { src: 'ntp_conf', dest: '/etc/ntp.conf'}
+
+  - name: Purge default unneeded packages
+    apt:
+      name: "{{ item }}"
+      purge: yes
+    loop: "{{ packagesToDelete }}"
+    ignore_errors: yes
+
+  - name: Update all packages to the latest version
+    apt:
+      name: "*"
+      update_cache: yes
+
+  - name: Install needed packages
+    apt:
+      name: "{{ item }}"
+      state: latest
+      update_cache: yes
+    loop: "{{ packagesToInstall }}"
+
+  - name: Delete unneeded files if those exist
+    file:
+      name: "{{ item }}"
+      state: absent
+    loop: "{{ filesToDelete }}"
+
+  - name: Mask and stop unnecessary systemd services
+    systemd:
+      name: "{{ item }}"
+      state: stopped
+      enabled: no
+      masked: yes
+    loop: "{{ systemdServicesToStop }}"
+    ignore_errors: yes
+
+  - name: Disable Network Manager
+    systemd:
+      name: "network-manager"
+      state: stopped
+      enabled: no
+    ignore_errors: yes
+
+  - name: Delete unneeded files if those exist
+    file:
+      name: "{{ item }}"
+      state: absent
+    loop: "{{ filesToDelete }}"
+
+  - name: Create new resolv.conf with content
+    copy:
+      dest: "/etc/resolv.conf"
+      content: |
+        nameserver {{ DNSserver }}
+        nameserver 127.0.0.1
+
+  - name: Append /etc/hosts with content
+    lineinfile:
+      path: "/etc/hosts"
+      line: '127.0.0.1 {{ansible_nodename}} {{ansible_nodename}}.is.local'
+      insertbefore: BOF
+
+  - name: Create a symlink for localtime
+    file:
+      src: /usr/share/zoneinfo/Europe/Kiev
+      dest: /etc/localtime
+      state: link
+
+  - name: Enable and start necessary systemd services
+    systemd:
+      name: "{{ item }}"
+      state: restarted
+      enabled: yes
+    loop: "{{ systemdServicesToStart }}"
+
+  - name: get interface names back to normal and beloved by people
+    replace:
+      path=/etc/default/grub
+      regexp='GRUB_CMDLINE_LINUX=""'
+      replace='GRUB_CMDLINE_LINUX="ipv6.disable=1 net.ifnames=0 biosdevname=0"'
+    register: grubmod
+    notify: restart host
+
+  - name: disable ipv6
+    replace:
+      path=/etc/default/grub
+      regexp='GRUB_CMDLINE_LINUX_DEFAULT=".*"'
+      replace='GRUB_CMDLINE_LINUX_DEFAULT="quiet splash ipv6.disable=1"'
+    notify: restart host
+
+  - name: update grub
+    command: update-grub
+    when: grubmod.changed
+
+  - name: Create loopback and eth0 interfaces
+    copy:
+      dest: "/etc/network/interfaces"
+      content: |
+        auto lo
+        iface lo inet loopback
+        auto eth0
+        iface eth0 inet dhcp
+
+  - name: Create a {{ directoryForConfigs }} directory if it does not exist
+    file:
+      path: "{{ directoryForConfigs }}"
+      state: directory
+      mode: '0755'
+
+  - name: Transfer configs
+    copy:
+      src: configs/{{ item }}
+      dest: "{{ directoryForConfigs }}/{{ item }}"
+      mode: '0755'
+    loop: "{{ configFilesToTransfer }}"
+
+  - name: Create a symlink for configs files in /etc/skel
+    file:
+      src: "{{ directoryForConfigs }}/{{ item }}"
+      dest: "/etc/skel/{{ item }}"
+      state: link
+      force: yes
+    loop: "{{ configFilesToTransfer }}"
+
+  - name: Rename init.vim to .vimrc if it exists
+    command: "mv /etc/skel/init.vim /etc/skel/.vimrc"
+    when: '"init.vim" in configFilesToTransfer
+
+  - name: remove floppy
+    shell: |
+      rmmod floppy
+      echo "blacklist floppy" | tee /etc/modprobe.d/blacklist-floppy.conf 
+      dpkg-reconfigure initramfs-tools
+
+  - name: Get the location of zsh
+    shell: echo $(which {{ defaultShell4CreatedUsers }})
+    register: shellLocation
+
+  - name: create users
+    user:
+      name: "{{ item }}"
+      shell: "{{ shellLocation.stdout }}"
+      groups: sudo
+      append: yes
+      state: present
+      create_home: yes
+    loop: "{{ usersToCreate }}"
+
+  - name: Set authorized keys for created users
+    authorized_key:
+      user: "{{ item }}"
+      state: present
+      key: "{{ lookup('file', 'authorized_keys/{{ item }}') }}"
+    loop: "{{ usersToCreate }}"
+
+  - name: Mask and stop unnecessary systemd services
+    systemd:
+      name: "systemd-networkd"
+      enabled: no
+      masked: yes
+    notify: restart host
+    ignore_errors: yes

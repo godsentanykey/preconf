@@ -1,0 +1,12 @@
+---
+# vars file for centos
+packagesToDelete: []
+DNSserver: 10.1.1.5
+packagesToInstall: ['chrony', 'net-tools', 'openssh-server', 'git', 'zsh', 'rsync', 'vim', 'tmux', 'fzf', 'ripgrep', 'python3-pip']
+filesToDelete: ['/etc/resolv.conf', '/etc/localtime']
+systemdServicesToStop: ['systemd-timesyncd', 'NetworkManager']
+systemdServicesToStart: ['chronyd']
+directoryForConfigs: /home/dotfiles
+configFilesToTransfer: ['.screenrc','.tmux.conf','.tmux.conf.local','.toprc','.zshrc','init.vim','kitty.conf','mc.ini', 'mpv.conf']
+usersToCreate: ['ovoytenko', 'skhalavchuk', 'sbulatov', 'snekliudov']
+defaultShell4CreatedUsers: zsh

@@ -1,0 +1,8 @@
+---
+  - name: test
+    gather_facts: true
+    hosts: ALL
+    become: true
+    roles:
+      - { role: ubuntu, when: "ansible_os_family == 'Debian'"}
+      - { role: centos, when: "ansible_os_family == 'RedHat'"}

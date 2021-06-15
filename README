@@ -1,0 +1,41 @@
+Project Title
+
+This project makes a preconfiguration of newly created Ubuntu or Centos virtual machine so after executing Ansible playbook you are ready to start working without wasting time on setting everything up.
+
+Getting Started
+
+Assume you already have curl or wget installed on your machine.
+Предоставить курл для скачивания!!!
+
+Prerequisites
+
+- Ansible version 2.8+
+- Python 2 & 3
+- Newly created Ubuntu or Centos VM with already created user and corresponding public ssh key in authorized_keys.
+For simplicity create user "ansible" and insert its ssh-key ansible.pub which located in files directory.
+
+Installing
+
+After downloading a repository:
+1. Open inventory file in project root and specify ip-addresses of hosts you want to preconfigure.
+2. Run command ssh-keyscan -H {IP_ADDRESS} >> ~/.ssh/known_hosts where {IP_ADDRESS} - ip-address of host you want to preconfigure. In other way first run will be terminated.
+3. In project root run "ansible-playbook preconfigure.yml"
+4. Wait until playbook finishes all tasks.
+5. Now all users specified in {ubuntu/centos}/vars/main.yml variable usersToCreate are able to log in newly created VM.
+
+Deployment
+
+1. You can specify and customize playbook with the help of {ubuntu/centos}/vars/main.yml and those variables:
+- packagesToDelete
+- packagesToInstall
+- filesToDelete
+- systemdServicesToStop
+- systemdServicesToStart
+- directoryForConfigs
+- configFilesToTransfer
+- usersToCreate
+- DefaultShellPath
+
+2. Also you can change tasks in {ubuntu/centos}/tasks/main.yml.
+3. Handlers are described in {ubuntu/centos}/handlers/main.yml. 
+
